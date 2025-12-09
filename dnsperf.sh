@@ -3,17 +3,20 @@ set -euo pipefail
 
 # --- Argument Parsing ---
 CONTEXT=""
+QUERY_TYPE="mixed"
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --context=*) CONTEXT="${1#*=}"; shift ;;
         --context) CONTEXT="$2"; shift; shift ;;
+        --query-type=*) QUERY_TYPE="${1#*=}"; shift ;;
+        --query-type) QUERY_TYPE="$2"; shift; shift ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
 done
 
 if [[ -z "$CONTEXT" ]]; then
-    echo "Usage: $0 --context=<kube-context>"
+    echo "Usage: $0 --context=<kube-context> [--query-type=<internal|external|mixed>]"
     echo "Available contexts:"
     kubectl config get-contexts -o name
     exit 1
@@ -51,8 +54,33 @@ oc_cmd create ns "$NAMESPACE" --dry-run=client -o yaml | oc_cmd apply -f -
 # 2. Create the Query Data File (The "Relevant" Load)
 # We create a ConfigMap containing the DNS query patterns.
 # Format: <name> <record_type>
-echo "==> Creating query payload..."
-cat <<EOF > queryfile.txt
+echo "==> Creating query payload (Type: $QUERY_TYPE)..."
+
+case "$QUERY_TYPE" in
+    internal)
+        # Internal names with trailing dot to bypass search paths
+        cat <<EOF > queryfile.txt
+kubernetes.default.svc.cluster.local. A
+kubernetes.default.svc.cluster.local. A
+kubernetes.default.svc.cluster.local. A
+kubernetes.default.svc.cluster.local. SRV
+fake.entry.cluster.local. A
+openshift.default.svc.cluster.local. A
+EOF
+        ;;
+    external)
+        # External names
+        cat <<EOF > queryfile.txt
+google.com. A
+example.com. A
+github.com. A
+quay.io. A
+registry.redhat.io. A
+EOF
+        ;;
+    mixed|*)
+        # Mixed workload
+        cat <<EOF > queryfile.txt
 kubernetes.default.svc.cluster.local A
 kubernetes.default.svc.cluster.local A
 kubernetes.default.svc.cluster.local A
@@ -62,6 +90,8 @@ example.com A
 nonexistent.service.local A
 fake.entry.cluster.local A
 EOF
+        ;;
+esac
 
 oc_cmd create configmap dns-queries --from-file=queryfile.txt -n "$NAMESPACE" --dry-run=client -o yaml | oc_cmd apply -f -
 rm queryfile.txt
@@ -161,18 +191,20 @@ while [ $SECONDS -lt $END_TIME ]; do
     # output is in millicores (e.g., 10m). We strip 'm' and sum them up.
     
     # Snapshot current usage
-    CURRENT_USAGE=$(oc_cmd adm top pods -n openshift-dns -l dns.operator.openshift.io/daemonset-dns=default --no-headers | awk '{sum += $3} END {print sum}')
+    # We capture stderr to a temporary file to check for errors, or just check if output is empty
+    CURRENT_USAGE=$(oc_cmd adm top pods -n openshift-dns -l dns.operator.openshift.io/daemonset-dns=default --no-headers 2>/dev/null | awk '{sum += $3} END {print sum}')
     
     # Clean the 'm' unit if present (oc adm top usually returns '15m')
     CURRENT_USAGE=${CURRENT_USAGE%m}
     
     # Handle cases where top returns nothing/error
-    if [[ -z "$CURRENT_USAGE" ]]; then CURRENT_USAGE=0; fi
-
-    echo "   [$(date +%T)] Cluster-wide CoreDNS CPU: ${CURRENT_USAGE}m"
-    
-    TOTAL_CPU_SUM=$((TOTAL_CPU_SUM + CURRENT_USAGE))
-    SAMPLES=$((SAMPLES + 1))
+    if [[ -z "$CURRENT_USAGE" ]]; then
+        echo "   [$(date +%T)] WARNING: Failed to retrieve CPU usage. Skipping sample."
+    else
+        echo "   [$(date +%T)] Cluster-wide CoreDNS CPU: ${CURRENT_USAGE}m"
+        TOTAL_CPU_SUM=$((TOTAL_CPU_SUM + CURRENT_USAGE))
+        SAMPLES=$((SAMPLES + 1))
+    fi
     
     sleep 5
 done

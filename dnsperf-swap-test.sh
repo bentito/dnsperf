@@ -22,8 +22,12 @@ function run_benchmark() {
     ./verify-coredns-version.sh --context="$CONTEXT"
     
     echo ""
-    echo ">>> Running Performance Test..."
-    ./dnsperf.sh --context="$CONTEXT"
+    echo ">>> Running Performance Test (INTERNAL Queries)..."
+    ./dnsperf.sh --context="$CONTEXT" --query-type=internal
+
+    echo ""
+    echo ">>> Running Performance Test (EXTERNAL Queries)..."
+    ./dnsperf.sh --context="$CONTEXT" --query-type=external
 }
 
 function stop_operators() {
