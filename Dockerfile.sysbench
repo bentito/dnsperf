@@ -1,0 +1,5 @@
+FROM fedora:latest
+
+RUN dnf install -y sysbench && dnf clean all
+
+CMD ["/bin/bash"]
