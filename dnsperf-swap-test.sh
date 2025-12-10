@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Hardcoded Context as requested
-CONTEXT="openshift-4.19"
-TARGET_IMAGE="quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:18504c088c4b54069cf75c2d7d2dc9dd3d0607c4ac9b6a3f6a302bd80f0890bc"
+CONTEXT="admin"
+TARGET_IMAGE="quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:8346b755f20da14f192278b33cc68fbe777df45cb03fd0ebc1ce1758508b9899"
 
 # Wrapper for oc
 function oc_cmd() {
@@ -72,7 +72,7 @@ run_benchmark
 # 2. SWAP IMAGE
 echo ""
 echo "================================================================"
-echo " PHASE 2: SWAPPING IMAGE TO 1.13.1"
+echo " PHASE 2: SWAPPING IMAGE TO 1.11.3 (DOWNGRADE)"
 echo " Target: $TARGET_IMAGE"
 echo "================================================================"
 
